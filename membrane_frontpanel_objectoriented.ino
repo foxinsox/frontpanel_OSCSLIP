@@ -107,8 +107,6 @@ Poti *input, *membrane, *volume;
 boolean on = true;
 boolean buttonPressed, buttonPressed_, buttonReleased;
 boolean synced, changed;
-unsigned long lastDebounceTime = 0;  // the last time the button pin was toggled
-unsigned long debounceDelay = 10;    // the debounce time; increase if the output flickers  //50
 
 //global values from incoming OSC Bundle
 int32_t _on, _membrane, _volume, _inputState;
@@ -183,30 +181,6 @@ void loop() {
   //at the end of each loop: update previous cycle values_
   update_();
 }
-
-
-/*
-  void readButton() {
-  // read the state of the pushbutton value:
-  buttonPressed = digitalRead(button);
-  if (buttonPressed != buttonPressed_ ) {
-    lastDebounceTime = millis();
-    buttonReleased = true;
-  }
-
-  if ((millis() - lastDebounceTime) > debounceDelay && buttonReleased) {
-    // whatever the reading is at, it's been there for longer than the debounce
-    // delay, so take it as the actual current state:
-    buttonReleased = false;
-    on = !on;
-  }
-  digitalWrite(buttonLED, on);
-  if (!on) {
-    digitalWrite(ledA, LOW);
-    digitalWrite(ledB, LOW);
-    digitalWrite(ledC, LOW);
-  }
-  }*/
 
 void update_() {
   membrane_ = membrane->potiVal;
@@ -415,9 +389,8 @@ void sendOSCBundle() {
   bndl.add("/input").add((int32_t)input->potiVal);
   bndl.add("/membrane").add((int32_t)membrane->potiVal);
   bndl.add("/volume").add((int32_t)volume->potiVal);
-  bndl.add("/synced").add((int32_t)synced);
-  bndl.add("/changed").add((int32_t)changed);
-  bndl.add("/buttonPressed").add((int32_t)buttonPressed);
+  //bndl.add("/synced").add((int32_t)synced);
+  //bndl.add("/changed").add((int32_t)changed);
 
   SLIPSerial.beginPacket();
   bndl.send(SLIPSerial); // send the bytes to the SLIP stream
