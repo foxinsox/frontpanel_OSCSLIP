@@ -20,7 +20,7 @@ class Poti
 
   private:
     //give the potis some deviation space
-    int32_t deviation = 4;
+    float deviation = 1.2;
   public:
     int enablePin, in1, in2, potiPin, potiVal, targetVal;
 
@@ -29,6 +29,7 @@ class Poti
       in1 = _in1;
       in2 = _in2;
       potiPin = _potiPin;
+      setPinModes();
     }
     void setPinModes() {
       pinMode(enablePin, OUTPUT);
@@ -59,16 +60,26 @@ class Poti
         stopMotor();
         return;
       }
-      if ((potiVal >= targetVal - deviation) && (potiVal <= targetVal + deviation)) {
+      if ((potiVal >= lowerDeviation(targetVal)) && (potiVal <= upperDeviation(targetVal))) {
         stopMotor();
         return;
       }
-      if (potiVal < targetVal + deviation) turnRight();
-      if (potiVal > targetVal - deviation) turnLeft();
+      if (potiVal < lowerDeviation(targetVal)) turnRight();
+      if (potiVal > upperDeviation(targetVal)) turnLeft();
     }
     boolean isSynced(int32_t _val) {
-      if ((potiVal >= _val - deviation) && (potiVal <= _val + deviation))return true;
+      //deviation for logarithmic scale!
+      if ((potiVal >= lowerDeviation(_val)) && (potiVal <= upperDeviation(_val)))return true;
       else return false;
+    }
+
+    //calculate logarithmic deviations based on reference value
+    float upperDeviation(float reference){
+      return pow(10, log10(reference) + log10(deviation));
+    }
+    
+    float lowerDeviation(float reference){
+      return pow(10, log10(reference) - log10(deviation));
     }
 };
 
@@ -86,6 +97,7 @@ Poti *input, *membrane, *volume;
 
 boolean on = true;
 boolean buttonPressed, buttonPressed_, buttonReleased;
+boolean synced, changed;
 unsigned long lastDebounceTime = 0;  // the last time the button pin was toggled
 unsigned long debounceDelay = 50;    // the debounce time; increase if the output flickers
 
@@ -133,8 +145,8 @@ void loop() {
   input->read();
   membrane->read();
   volume->read();
-
   updateInputState();
+
 
   //update potis
   input->update();
@@ -185,10 +197,6 @@ void listenForIncomingBundles() {
       while (size--)
         bundleIN.fill(SLIPSerial.read());
     }
-  //update potis
-  input->update();
-  membrane->update();
-  volume->update();
 
   if (!bundleIN.hasError()) {
     bundleIN.dispatch("/on", _getOn);
@@ -230,25 +238,29 @@ void _getVolume(OSCMessage &msg) {
 
 void compare() {
   //check if local values are synced to global values
-  bool synced = (on == _on) && (inputState == _inputState) && (membrane->isSynced(_membrane)) && (volume->isSynced(_volume));
+  //TODO: consider on!
+  //synced = ((on == _on) && (inputState == _inputState) && (membrane->isSynced(_membrane)) && (volume->isSynced(_volume)));
+  synced = ((inputState == _inputState) && (membrane->isSynced(_membrane)) && (volume->isSynced(_volume)));
 
   //check if local values have changed since last loop
-  bool changed = (on != on_) || (inputState != inputState_) || (!membrane->isSynced(membrane_)) || (!volume->isSynced(volume_));
+  //changed = ((on != on_) || (inputState != inputState_) || (!membrane->isSynced(membrane_)) || (!volume->isSynced(volume_)));
+  changed = ((inputState != inputState_) || (!membrane->isSynced(membrane_)) || (!volume->isSynced(volume_)));
 
   //if in idle mode and nothing changed: stay in idle mode
   if ((status == idle) && synced) return;
 
-  //if in idle mode and !changed local values but unmatching incoming values: switch to read mode
-  if ((status == idle) && !changed && !synced) {
-    status = read;
-    adaptRead();
-    return;
-  }
 
   //if in idle mode and changed local values: switch to write mode
   if ((status == idle) && changed) {
     status = write;
     adaptWrite();
+    return;
+  }
+
+  //if in idle mode and !changed local values but unmatching incoming values: switch to read mode
+  if ((status == idle) && !changed && !synced) {
+    status = read;
+    adaptRead();
     return;
   }
 
@@ -280,7 +292,7 @@ void compare() {
 //takeover changes from incoming values
 void adaptRead() {
   on = _on;
-  inputState = _inputState;
+  inputState = (inputType)_inputState;
   volume->targetVal = _volume;
   membrane->targetVal = _membrane;
   input->targetVal = _inputState;
@@ -288,7 +300,6 @@ void adaptRead() {
 
 //takeover changes from local interaction
 void adaptWrite() {
-  //todo: read button!
   readButton();
   volume->targetVal = volume->potiVal;
   membrane->targetVal = membrane->potiVal;
@@ -326,6 +337,8 @@ void sendOSCBundle() {
   bndl.add("/input").add((int32_t)input->potiVal);
   bndl.add("/membrane").add((int32_t)membrane->potiVal);
   bndl.add("/volume").add((int32_t)volume->potiVal);
+  bndl.add("/synced").add((int32_t)synced);
+  bndl.add("/changed").add((int32_t)changed);
 
   SLIPSerial.beginPacket();
   bndl.send(SLIPSerial); // send the bytes to the SLIP stream
@@ -333,6 +346,8 @@ void sendOSCBundle() {
   bndl.empty(); // empty the bundle to free room for a new one
   delay(100);
 }
+
+
 
 /*
   void sendOSCMessage() {
