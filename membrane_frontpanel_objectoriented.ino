@@ -344,7 +344,7 @@ void sendOSCBundle() {
   msg.send(SLIPSerial); // send the bytes to the SLIP stream
   SLIPSerial.endPacket(); // mark the end of the OSC Packet
   msg.empty(); // free space occupied by message
-  }*/
+  }
 
   void logPotis() {
   Serial.print(inputState);
@@ -354,4 +354,4 @@ void sendOSCBundle() {
   Serial.print(membrane->potiVal);
   Serial.print("\t");
   Serial.println(volume->potiVal);
-  }
+  }*/
