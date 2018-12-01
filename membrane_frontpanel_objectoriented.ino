@@ -108,7 +108,7 @@ boolean on = true;
 boolean buttonPressed, buttonPressed_, buttonReleased;
 boolean synced, changed;
 unsigned long lastDebounceTime = 0;  // the last time the button pin was toggled
-unsigned long debounceDelay = 50;    // the debounce time; increase if the output flickers
+unsigned long debounceDelay = 10;    // the debounce time; increase if the output flickers  //50
 
 //global values from incoming OSC Bundle
 int32_t _on, _membrane, _volume, _inputState;
@@ -151,29 +151,42 @@ void setup() {
 }
 
 void loop() {
+  //buttonPressed = digitalRead(button);
+
+  if (digitalRead(button)) buttonPressed = true;
 
   input->read();
   membrane->read();
   volume->read();
   updateInputState();
 
-
   //update potis
   input->update();
   membrane->update();
   volume->update();
 
+  // read the state of the pushbutton value:
+  if (digitalRead(button)) buttonPressed = true;
+
 
   //also needs to listen for incoming bundles!
   listenForIncomingBundles();
 
+  digitalWrite(buttonLED, on);
+  if (!on) {
+    digitalWrite(ledA, LOW);
+    digitalWrite(ledB, LOW);
+    digitalWrite(ledC, LOW);
+  }
 
 
   //at the end of each loop: update previous cycle values_
   update_();
 }
 
-void readButton() {
+
+/*
+  void readButton() {
   // read the state of the pushbutton value:
   buttonPressed = digitalRead(button);
   if (buttonPressed != buttonPressed_ ) {
@@ -188,7 +201,12 @@ void readButton() {
     on = !on;
   }
   digitalWrite(buttonLED, on);
-}
+  if (!on) {
+    digitalWrite(ledA, LOW);
+    digitalWrite(ledB, LOW);
+    digitalWrite(ledC, LOW);
+  }
+  }*/
 
 void update_() {
   membrane_ = membrane->potiVal;
@@ -201,18 +219,42 @@ void update_() {
 void listenForIncomingBundles() {
   OSCBundle bundleIN;
   int size;
-  while (!SLIPSerial.endofPacket())
+  if (digitalRead(button)) buttonPressed = true;
+
+  while (!SLIPSerial.endofPacket()) {
+    if (digitalRead(button)) buttonPressed = true;
     if ( (size = SLIPSerial.available()) > 0)
     {
-      while (size--)
+      if (digitalRead(button)) buttonPressed = true;
+      while (size--) {
         bundleIN.fill(SLIPSerial.read());
+        // read the state of the pushbutton value:
+        if (digitalRead(button)) buttonPressed = true;
+      }
     }
+  }
+  if (digitalRead(button)) buttonPressed = true;
+
 
   if (!bundleIN.hasError()) {
     bundleIN.dispatch("/on", _getOn);
+    if (digitalRead(button)) buttonPressed = true;
+
     bundleIN.dispatch("/inputState", _getInputState);
+    if (digitalRead(button)) buttonPressed = true;
+
     bundleIN.dispatch("/membrane", _getMembrane);
+    if (digitalRead(button)) buttonPressed = true;
+
     bundleIN.dispatch("/volume", _getVolume);
+    // read the state of the pushbutton value:
+    if (digitalRead(button)) buttonPressed = true;
+
+    if (buttonPressed && !(digitalRead(button))) {
+      on = !on;
+    }
+    buttonPressed = digitalRead(button);
+
     compare();
     sendOSCBundle();
   }
@@ -247,11 +289,14 @@ void _getVolume(OSCMessage &msg) {
 }
 
 void compare() {
+
+
   //check if local values are synced to global values
   synced = ((on == _on) && (inputState == _inputState) && (membrane->isSynced(_membrane)) && (volume->isSynced(_volume)));
 
   //check if local values have changed since last loop
   changed = ((on != on_) || (inputState != inputState_) || (membrane->hasChanged(membrane_)) || (volume->hasChanged(volume_)));
+
 
 
   switch (status) {
@@ -330,7 +375,7 @@ void adaptRead() {
 
 //takeover changes from local interaction
 void adaptWrite() {
-  readButton();
+  //readButton();
   volume->targetVal = volume->potiVal;
   membrane->targetVal = membrane->potiVal;
   input->targetVal = input->potiVal;
@@ -338,22 +383,25 @@ void adaptWrite() {
 
 
 void updateInputState() {
-  if (input->potiVal < 600) {
+
+  if (input->potiVal < 600 && on) {
     digitalWrite(ledA, HIGH);
     digitalWrite(ledB, LOW);
     digitalWrite(ledC, LOW);
     inputState = bluetooth;
   }
-  else if ((input->potiVal >= 600) && (input->potiVal < 960)) {
+  else if ((input->potiVal >= 600) && (input->potiVal < 960) && on) {
     digitalWrite(ledA, LOW);
     digitalWrite(ledB, HIGH);
     digitalWrite(ledC, LOW);
     inputState = street;
   } else {
-    digitalWrite(ledA, LOW);
-    digitalWrite(ledB, LOW);
-    digitalWrite(ledC, HIGH);
-    inputState = line;
+    if (on) {
+      digitalWrite(ledA, LOW);
+      digitalWrite(ledB, LOW);
+      digitalWrite(ledC, HIGH);
+      inputState = line;
+    }
   }
 }
 
@@ -369,6 +417,7 @@ void sendOSCBundle() {
   bndl.add("/volume").add((int32_t)volume->potiVal);
   bndl.add("/synced").add((int32_t)synced);
   bndl.add("/changed").add((int32_t)changed);
+  bndl.add("/buttonPressed").add((int32_t)buttonPressed);
 
   SLIPSerial.beginPacket();
   bndl.send(SLIPSerial); // send the bytes to the SLIP stream
@@ -376,27 +425,3 @@ void sendOSCBundle() {
   bndl.empty(); // empty the bundle to free room for a new one
   delay(100);
 }
-
-
-
-/*
-  void sendOSCMessage() {
-  //the message wants an OSC address as first argument
-  OSCMessage msg("/inputState");
-  msg.add((int32_t)inputState);
-
-  SLIPSerial.beginPacket();
-  msg.send(SLIPSerial); // send the bytes to the SLIP stream
-  SLIPSerial.endPacket(); // mark the end of the OSC Packet
-  msg.empty(); // free space occupied by message
-  }
-
-  void logPotis() {
-  Serial.print(inputState);
-  Serial.print("\t");
-  Serial.print(input->potiVal);
-  Serial.print("\t");
-  Serial.print(membrane->potiVal);
-  Serial.print("\t");
-  Serial.println(volume->potiVal);
-  }*/
