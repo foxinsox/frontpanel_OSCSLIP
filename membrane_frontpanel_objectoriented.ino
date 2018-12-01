@@ -14,13 +14,17 @@ enum inputType {bluetooth = 0, street = 890, line = 1024};
 enum statusType {idle = 0, read = 1, write = 2};
 enum inputType inputState;
 enum statusType status = idle;
+int writeCounter = 0;
+int writeCounterThreshold = 20; //amount of cycles after last local change that state==write should remain set until it goes back to idle
+int readCounter = 0;
+int readCounterThreshold = 2; //amount of cycles until it switches from idle to read
+
 
 class Poti
 {
-
   private:
-    //give the potis some deviation space
-    float deviation = 1.2;
+    float deviation = 1.03f;
+    int idleDeviation = 2;
   public:
     int enablePin, in1, in2, potiPin, potiVal, targetVal;
 
@@ -73,12 +77,17 @@ class Poti
       else return false;
     }
 
+    boolean hasChanged(int32_t val_) {
+      if ((potiVal > val_ + idleDeviation) || (potiVal < val_ - idleDeviation))return true;
+      else return false;
+    }
+
     //calculate logarithmic deviations based on reference value
-    float upperDeviation(float reference){
+    float upperDeviation(float reference) {
       return pow(10, log10(reference) + log10(deviation));
     }
-    
-    float lowerDeviation(float reference){
+
+    float lowerDeviation(float reference) {
       return pow(10, log10(reference) - log10(deviation));
     }
 };
@@ -142,6 +151,7 @@ void setup() {
 }
 
 void loop() {
+
   input->read();
   membrane->read();
   volume->read();
@@ -238,54 +248,74 @@ void _getVolume(OSCMessage &msg) {
 
 void compare() {
   //check if local values are synced to global values
-  //TODO: consider on!
-  //synced = ((on == _on) && (inputState == _inputState) && (membrane->isSynced(_membrane)) && (volume->isSynced(_volume)));
-  synced = ((inputState == _inputState) && (membrane->isSynced(_membrane)) && (volume->isSynced(_volume)));
+  synced = ((on == _on) && (inputState == _inputState) && (membrane->isSynced(_membrane)) && (volume->isSynced(_volume)));
 
   //check if local values have changed since last loop
-  //changed = ((on != on_) || (inputState != inputState_) || (!membrane->isSynced(membrane_)) || (!volume->isSynced(volume_)));
-  changed = ((inputState != inputState_) || (!membrane->isSynced(membrane_)) || (!volume->isSynced(volume_)));
-
-  //if in idle mode and nothing changed: stay in idle mode
-  if ((status == idle) && synced) return;
+  changed = ((on != on_) || (inputState != inputState_) || (membrane->hasChanged(membrane_)) || (volume->hasChanged(volume_)));
 
 
-  //if in idle mode and changed local values: switch to write mode
-  if ((status == idle) && changed) {
-    status = write;
-    adaptWrite();
-    return;
-  }
-
-  //if in idle mode and !changed local values but unmatching incoming values: switch to read mode
-  if ((status == idle) && !changed && !synced) {
-    status = read;
-    adaptRead();
-    return;
-  }
-
-  //if in read mode and !changed local values and matching incoming values: switch to idle mode
-  if ((status == read) && !changed && synced) {
-    status = idle;
-    return;
-  }
-
-  //if in read mode and changed local values and matching incoming values: remain in read mode and keep on adapting to incoming values
-  if ((status == read) && !synced) {
-    adaptRead();
-    return;
-  }
-
-  //if in write mode and unmatching incoming values: stay in write mode
-  if ((status == write) && !synced) {
-    adaptWrite();
-    return;
-  }
-
-  //if in write mode and matching incoming values: switch to idle mode
-  if ((status == write) && synced) {
-    status = idle;
-    return;
+  switch (status) {
+    case idle:
+      if (synced) {
+        readCounter = 0;
+      }
+      if (!synced) {
+        readCounter++;
+      }
+      if (readCounter >= readCounterThreshold) {
+        status = read;
+        return;
+      }
+      if (!synced && changed) {
+        writeCounter = 0;
+        status = write;
+        return;
+      }
+      if (synced && changed) {
+        writeCounter = 0;
+        status = write;
+        return;
+      }
+      break;
+    case read:
+      if (synced && !changed) {
+        status = idle;
+        return;
+      }
+      if (!synced && !changed) {
+        adaptRead();
+        return;
+      }
+      if (!synced && changed) {
+        adaptRead();
+        return;
+      }
+      if (synced && changed) {
+        status = write;
+        return;
+      }
+      break;
+    case write:
+      writeCounter++;
+      if (synced && !changed && writeCounter >= writeCounterThreshold) {
+        status = idle;
+        return;
+      }
+      if (!synced && !changed) {
+        adaptWrite();
+        return;
+      }
+      if (!synced && changed) {
+        writeCounter = 0;
+        adaptWrite();
+        return;
+      }
+      if (synced && changed) {
+        writeCounter = 0;
+        adaptWrite();
+        return;
+      }
+      break;
   }
 }
 
