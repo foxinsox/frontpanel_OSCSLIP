@@ -18,7 +18,7 @@ int writeCounter = 0;
 int writeCounterThreshold = 20; //amount of cycles after last local change that state==write should remain set until it goes back to idle
 int readCounter = 0;
 int readCounterThreshold = 2; //amount of cycles until it switches from idle to read
-
+int timeout = 0; //timeout if no OSC communication
 
 class Poti
 {
@@ -145,7 +145,7 @@ void setup() {
   volume->targetVal = volume->potiVal;
   membrane->targetVal = membrane->potiVal;
   input->targetVal = inputState;
-
+  status = write;
 }
 
 void loop() {
