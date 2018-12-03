@@ -15,16 +15,16 @@ enum statusType {idle = 0, read = 1, write = 2};
 enum inputType inputState;
 enum statusType status = idle;
 int writeCounter = 0;
-int writeCounterThreshold = 10; //amount of cycles after last local change that state==write should remain set until it goes back to idle
+int writeCounterThreshold = 20; //amount of cycles after last local change that state==write should remain set until it goes back to idle
 int readCounter = 0;
-int readCounterThreshold = 10; //amount of cycles until it switches from idle to read
+int readCounterThreshold = 20; //amount of cycles until it switches from idle to read
 int timeout = 0; //timeout if no OSC communication
 
 class Poti
 {
   private:
-    float deviation = 1.1f;  //1.03f
-    int idleDeviation = 4;  //2
+    float deviation = 1.05f;  //1.03f
+    int idleDeviation = 2;  //2
   public:
     int enablePin, in1, in2, potiPin, potiVal, targetVal;
 
@@ -202,6 +202,7 @@ void listenForIncomingBundles() {
   if (digitalRead(button)) buttonPressed = true;
 
   while (!SLIPSerial.endofPacket()) {
+    communicationStarted = false;
     if (digitalRead(button)) buttonPressed = true;
     if ( (size = SLIPSerial.available()) > 0)
     {
@@ -238,6 +239,8 @@ void listenForIncomingBundles() {
     compare();
     sendOSCBundle();
     communicationStarted = true;
+  }else{
+    communicationStarted = false;
   }
 }
 
