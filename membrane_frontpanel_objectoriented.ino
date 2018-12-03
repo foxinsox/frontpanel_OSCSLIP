@@ -9,22 +9,22 @@ SLIPEncodedUSBSerial SLIPSerial( thisBoardsSerialUSB );
 SLIPEncodedSerial SLIPSerial(Serial); // Change to Serial1 or Serial2 etc. for boards with multiple serial ports that don’t have Serial
 #endif
 
-
+boolean communicationStarted = false;
 enum inputType {bluetooth = 0, street = 890, line = 1024};
 enum statusType {idle = 0, read = 1, write = 2};
 enum inputType inputState;
 enum statusType status = idle;
 int writeCounter = 0;
-int writeCounterThreshold = 20; //amount of cycles after last local change that state==write should remain set until it goes back to idle
+int writeCounterThreshold = 10; //amount of cycles after last local change that state==write should remain set until it goes back to idle
 int readCounter = 0;
-int readCounterThreshold = 2; //amount of cycles until it switches from idle to read
+int readCounterThreshold = 10; //amount of cycles until it switches from idle to read
 int timeout = 0; //timeout if no OSC communication
 
 class Poti
 {
   private:
-    float deviation = 1.03f;
-    int idleDeviation = 2;
+    float deviation = 1.1f;  //1.03f
+    int idleDeviation = 4;  //2
   public:
     int enablePin, in1, in2, potiPin, potiVal, targetVal;
 
@@ -64,12 +64,17 @@ class Poti
         stopMotor();
         return;
       }
+
       if ((potiVal >= lowerDeviation(targetVal)) && (potiVal <= upperDeviation(targetVal))) {
         stopMotor();
         return;
       }
-      if (potiVal < lowerDeviation(targetVal)) turnRight();
-      if (potiVal > upperDeviation(targetVal)) turnLeft();
+
+      if (status == 1 && communicationStarted) {
+        if (potiVal < lowerDeviation(targetVal)) turnRight();
+        if (potiVal > upperDeviation(targetVal)) turnLeft();
+      }
+
     }
     boolean isSynced(int32_t _val) {
       //deviation for logarithmic scale!
@@ -137,6 +142,7 @@ void setup() {
 
 
   //init values
+  /*
   input->read();
   membrane->read();
   volume->read();
@@ -144,8 +150,8 @@ void setup() {
   update_();
   volume->targetVal = volume->potiVal;
   membrane->targetVal = membrane->potiVal;
-  input->targetVal = inputState;
-  status = write;
+  input->targetVal = inputState;*/
+  status = idle;
 }
 
 void loop() {
@@ -231,6 +237,7 @@ void listenForIncomingBundles() {
 
     compare();
     sendOSCBundle();
+    communicationStarted = true;
   }
 }
 
@@ -396,5 +403,5 @@ void sendOSCBundle() {
   bndl.send(SLIPSerial); // send the bytes to the SLIP stream
   SLIPSerial.endPacket(); // mark the end of the OSC Packet
   bndl.empty(); // empty the bundle to free room for a new one
-  delay(100);
+  delay(30);
 }
