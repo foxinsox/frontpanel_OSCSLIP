@@ -9,8 +9,9 @@ SLIPEncodedUSBSerial SLIPSerial( thisBoardsSerialUSB );
 SLIPEncodedSerial SLIPSerial(Serial); // Change to Serial1 or Serial2 etc. for boards with multiple serial ports that don’t have Serial
 #endif
 
+
 boolean communicationStarted = false;
-enum inputType {bluetooth = 0, street = 890, line = 1024};
+enum inputType {bluetooth = 1024, street = 120, line = 0};  //1024-300  300-40  40-0
 enum statusType {idle = 0, read = 1, write = 2};
 enum inputType inputState;
 enum statusType status = idle;
@@ -23,17 +24,21 @@ int timeout = 0; //timeout if no OSC communication
 class Poti
 {
   private:
-    float deviation = 1.05f;  //1.03f
-    int idleDeviation = 2;  //2
+    float deviation = 1.03f;  //1.03f
+    int idleDeviation = 5;  //2
+    float alpha = 0.4;
+    boolean isLogarithmic;
   public:
     int enablePin, in1, in2, potiPin, potiVal, targetVal;
 
-    Poti(int _enablePin, int _in1, int _in2, int _potiPin) {
+    Poti(int _enablePin, int _in1, int _in2, int _potiPin,boolean _isLogarithmic) {
       enablePin = _enablePin;
       in1 = _in1;
       in2 = _in2;
       potiPin = _potiPin;
+      isLogarithmic = _isLogarithmic;
       setPinModes();
+      potiVal = 1024 - analogRead(potiPin);
     }
     void setPinModes() {
       pinMode(enablePin, OUTPUT);
@@ -57,7 +62,8 @@ class Poti
       digitalWrite(enablePin, LOW);
     }
     void read() {
-      potiVal = analogRead(potiPin);
+      //potiVal = analogRead(potiPin);
+      potiVal = alpha * (1024 - analogRead(potiPin)) + (1 - alpha) * potiVal; //exponential smoothing
     }
     void update() {
       if (status == write) {
@@ -71,14 +77,15 @@ class Poti
       }
 
       if (status == 1 && communicationStarted) {
-        if (potiVal < lowerDeviation(targetVal)) turnRight();
-        if (potiVal > upperDeviation(targetVal)) turnLeft();
+        if (potiVal > lowerDeviation(targetVal)) turnRight();
+        if (potiVal < upperDeviation(targetVal)) turnLeft();
       }
 
     }
     boolean isSynced(int32_t _val) {
       //deviation for logarithmic scale!
       if ((potiVal >= lowerDeviation(_val)) && (potiVal <= upperDeviation(_val)))return true;
+      //if ((potiVal >= _val - idleDeviation) && (potiVal <= _val + idleDeviation))return true;
       else return false;
     }
 
@@ -87,17 +94,31 @@ class Poti
       else return false;
     }
 
-    //calculate logarithmic deviations based on reference value
     float upperDeviation(float reference) {
-      return pow(10, log10(reference) + log10(deviation));
+      if (isLogarithmic) {
+        //calculate logarithmic deviations based on reference value
+        //return pow(10, log10(reference) + log10(deviation));
+        return 1.05 * (reference + 1);
+      } else {
+        //linear
+        return reference + 15;
+      }
+
     }
 
     float lowerDeviation(float reference) {
-      return pow(10, log10(reference) - log10(deviation));
+      if (isLogarithmic) {
+        //calculate logarithmic deviations based on reference value
+        //return pow(10, log10(reference) - log10(deviation));
+        return 0.95 * reference;
+      } else {
+        //linear
+        return reference - 15;
+      }
     }
 };
 
-Poti *input, *membrane, *volume;
+Poti * input, *membrane, *volume;
 
 
 
@@ -123,9 +144,9 @@ int32_t on_, membrane_, volume_, inputState_;
 
 
 void setup() {
-  input = new Poti(3, 2, 4, A0);
-  membrane = new Poti(6, 5, 7, A1);
-  volume = new Poti(9, 8, 10, A2);
+  input = new Poti(3, 2, 4, A0,true);
+  membrane = new Poti(6, 5, 7, A1,false);
+  volume = new Poti(9, 8, 10, A2,true);
 
   pinMode(ledA, OUTPUT);
   digitalWrite(ledA, HIGH);
@@ -143,14 +164,14 @@ void setup() {
 
   //init values
   /*
-  input->read();
-  membrane->read();
-  volume->read();
-  updateInputState();
-  update_();
-  volume->targetVal = volume->potiVal;
-  membrane->targetVal = membrane->potiVal;
-  input->targetVal = inputState;*/
+    input->read();
+    membrane->read();
+    volume->read();
+    updateInputState();
+    update_();
+    volume->targetVal = volume->potiVal;
+    membrane->targetVal = membrane->potiVal;
+    input->targetVal = inputState;*/
   status = idle;
 }
 
@@ -239,33 +260,33 @@ void listenForIncomingBundles() {
     compare();
     sendOSCBundle();
     communicationStarted = true;
-  }else{
+  } else {
     communicationStarted = false;
   }
 }
 
-void _getOn(OSCMessage &msg) {
+void _getOn(OSCMessage & msg) {
   if (msg.isInt(0))
   {
     _on = msg.getInt(0);
   }
 }
 
-void _getInputState(OSCMessage &msg) {
+void _getInputState(OSCMessage & msg) {
   if (msg.isInt(0))
   {
     _inputState = inputType(msg.getInt(0));
   }
 }
 
-void _getMembrane(OSCMessage &msg) {
+void _getMembrane(OSCMessage & msg) {
   if (msg.isInt(0))
   {
     _membrane = msg.getInt(0);
   }
 }
 
-void _getVolume(OSCMessage &msg) {
+void _getVolume(OSCMessage & msg) {
   if (msg.isInt(0))
   {
     _volume = msg.getInt(0);
@@ -365,29 +386,31 @@ void adaptWrite() {
   input->targetVal = input->potiVal;
 }
 
-
 void updateInputState() {
 
-  if (input->potiVal < 600 && on) {
-    digitalWrite(ledA, HIGH);
+
+  //1024-300  300-40  40-0
+  if (input->potiVal > 300 && on) {
+    digitalWrite(ledA, LOW);
     digitalWrite(ledB, LOW);
-    digitalWrite(ledC, LOW);
+    digitalWrite(ledC, HIGH);
     inputState = bluetooth;
   }
-  else if ((input->potiVal >= 600) && (input->potiVal < 960) && on) {
+  else if ((input->potiVal >= 40) && (input->potiVal < 300) && on) {
     digitalWrite(ledA, LOW);
     digitalWrite(ledB, HIGH);
     digitalWrite(ledC, LOW);
     inputState = street;
   } else {
     if (on) {
-      digitalWrite(ledA, LOW);
+      digitalWrite(ledA, HIGH);
       digitalWrite(ledB, LOW);
-      digitalWrite(ledC, HIGH);
+      digitalWrite(ledC, LOW);
       inputState = line;
     }
   }
 }
+
 
 void sendOSCBundle() {
   //declare the bundle
@@ -399,8 +422,8 @@ void sendOSCBundle() {
   bndl.add("/input").add((int32_t)input->potiVal);
   bndl.add("/membrane").add((int32_t)membrane->potiVal);
   bndl.add("/volume").add((int32_t)volume->potiVal);
-  //bndl.add("/synced").add((int32_t)synced);
-  //bndl.add("/changed").add((int32_t)changed);
+  bndl.add("/synced").add((int32_t)synced);
+  bndl.add("/changed").add((int32_t)changed);
 
   SLIPSerial.beginPacket();
   bndl.send(SLIPSerial); // send the bytes to the SLIP stream
