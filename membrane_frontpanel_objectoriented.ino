@@ -11,7 +11,7 @@ SLIPEncodedSerial SLIPSerial(Serial); // Change to Serial1 or Serial2 etc. for b
 
 
 boolean communicationStarted = false;
-enum inputType {bluetooth = 1024, street = 120, line = 0};  //1024-300  300-40  40-0
+enum inputType {bluetooth = 600, street = 120, line = 20};  //1024-300  300-40  40-0
 enum statusType {idle = 0, read = 1, write = 2};
 enum inputType inputState;
 enum statusType status = idle;
@@ -138,7 +138,7 @@ boolean synced, changed;
 int32_t _on, _membrane, _volume, _inputState;
 
 //device values from previous loop
-int32_t on_, membrane_, volume_, inputState_;
+int32_t on_, membrane_, volume_, inputState_, input_;
 
 
 
@@ -161,17 +161,6 @@ void setup() {
   //begin SLIPSerial just like Serial
   SLIPSerial.begin(57600);   // set this as high as you can reliably run on your platform
 
-
-  //init values
-  /*
-    input->read();
-    membrane->read();
-    volume->read();
-    updateInputState();
-    update_();
-    volume->targetVal = volume->potiVal;
-    membrane->targetVal = membrane->potiVal;
-    input->targetVal = inputState;*/
   status = idle;
 }
 
@@ -214,6 +203,7 @@ void update_() {
   volume_ = volume->potiVal;
   on_ = on;
   inputState_ = inputState;
+  input_ = input->potiVal;
   buttonPressed_ = buttonPressed;
 }
 
@@ -300,7 +290,7 @@ void compare() {
   synced = ((on == _on) && (inputState == _inputState) && (membrane->isSynced(_membrane)) && (volume->isSynced(_volume)));
 
   //check if local values have changed since last loop
-  changed = ((on != on_) || (inputState != inputState_) || (membrane->hasChanged(membrane_)) || (volume->hasChanged(volume_)));
+  changed = ((on != on_) || (inputState != inputState_) || (membrane->hasChanged(membrane_)) || (volume->hasChanged(volume_)) || (input->hasChanged(input_)));
 
 
 
@@ -390,7 +380,7 @@ void updateInputState() {
 
 
   //1024-300  300-40  40-0
-  if (input->potiVal > 300 && on) {
+  if (input->potiVal >= 300 && on) {
     digitalWrite(ledA, LOW);
     digitalWrite(ledB, LOW);
     digitalWrite(ledC, HIGH);
