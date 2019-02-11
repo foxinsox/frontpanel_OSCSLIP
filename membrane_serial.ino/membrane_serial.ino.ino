@@ -184,6 +184,7 @@ void loop() {
   // read the state of the pushbutton value:
   if (digitalRead(button)) buttonPressed = true;
 
+
   digitalWrite(buttonLED, on);
   if (!on) {
     digitalWrite(ledA, LOW);
@@ -254,8 +255,8 @@ void serialEvent() {
 
 void listenForIncomingBundlesViaSerial() {
   // read the state of the pushbutton value:
-    if (digitalRead(button)) buttonPressed = true;
-    
+  if (digitalRead(button)) buttonPressed = true;
+
   if (stringComplete) {
     //on,inputState,membrane,volume
     _on = Serial.parseInt();
@@ -280,8 +281,10 @@ void listenForIncomingBundlesViaSerial() {
 void compare() {
 
   // read the state of the pushbutton value:
-    if (digitalRead(button)) buttonPressed = true;
-
+  if (digitalRead(button)) buttonPressed = true;
+  if (buttonPressed && !buttonPressed_) {
+    on = !on;
+  }
 
   //check if local values are synced to global values
   synced = ((on == _on) && (inputState == _inputState) && (membrane->isSynced(_membrane)) && (volume->isSynced(_volume)));
@@ -375,8 +378,8 @@ void adaptWrite() {
 
 void updateInputState() {
 
-// read the state of the pushbutton value:
-    if (digitalRead(button)) buttonPressed = true;
+  // read the state of the pushbutton value:
+  if (digitalRead(button)) buttonPressed = true;
 
   //1024-300  300-40  40-0
   if (input->potiVal >= 300 && on) {
