@@ -1,0 +1,12 @@
+#N canvas 0 50 450 300 10;
+#X obj 105 93 *~;
+#X obj 149 75 / 1024;
+#X obj 103 55 inlet~;
+#X obj 104 116 outlet~;
+#X floatatom 161 102 5 0 0 0 - - -, f 5;
+#X obj 149 53 r volume_;
+#X connect 0 0 3 0;
+#X connect 1 0 0 1;
+#X connect 1 0 4 0;
+#X connect 2 0 0 0;
+#X connect 5 0 1 0;

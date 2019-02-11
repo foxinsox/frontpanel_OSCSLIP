@@ -1,24 +1,13 @@
-#include <OSCMessage.h>
-#include <OSCBundle.h>
-#include <OSCBoards.h>
-#ifdef BOARD_HAS_USB_SERIAL
-#include <SLIPEncodedUSBSerial.h>
-SLIPEncodedUSBSerial SLIPSerial( thisBoardsSerialUSB );
-#else
-#include <SLIPEncodedSerial.h>
-SLIPEncodedSerial SLIPSerial(Serial); // Change to Serial1 or Serial2 etc. for boards with multiple serial ports that don’t have Serial
-#endif
-
-
+int baud = 9600;
 boolean communicationStarted = false;
 enum inputType {bluetooth = 600, street = 120, line = 20};  //1024-300  300-40  40-0
 enum statusType {idle = 0, read = 1, write = 2};
 enum inputType inputState;
 enum statusType status = idle;
 int writeCounter = 0;
-int writeCounterThreshold = 20; //amount of cycles after last local change that state==write should remain set until it goes back to idle
+int writeCounterThreshold = 20;//20; //amount of cycles after last local change that state==write should remain set until it goes back to idle
 int readCounter = 0;
-int readCounterThreshold = 20; //amount of cycles until it switches from idle to read
+int readCounterThreshold = 20;//20; //amount of cycles until it switches from idle to read
 int timeout = 0; //timeout if no OSC communication
 
 class Poti
@@ -31,7 +20,7 @@ class Poti
   public:
     int enablePin, in1, in2, potiPin, potiVal, targetVal;
 
-    Poti(int _enablePin, int _in1, int _in2, int _potiPin,boolean _isLogarithmic) {
+    Poti(int _enablePin, int _in1, int _in2, int _potiPin, boolean _isLogarithmic) {
       enablePin = _enablePin;
       in1 = _in1;
       in2 = _in2;
@@ -134,19 +123,20 @@ boolean on = true;
 boolean buttonPressed, buttonPressed_, buttonReleased;
 boolean synced, changed;
 
-//global values from incoming OSC Bundle
+//global values from incoming Serial Bundle
 int32_t _on, _membrane, _volume, _inputState;
 
 //device values from previous loop
 int32_t on_, membrane_, volume_, inputState_, input_;
 
 
-
+String inputString = "";         // a String to hold incoming data
+boolean stringComplete = false;  // whether the string is complete
 
 void setup() {
-  input = new Poti(3, 2, 4, A0,true);
-  membrane = new Poti(6, 5, 7, A1,false);
-  volume = new Poti(9, 8, 10, A2,true);
+  input = new Poti(3, 2, 4, A0, true);
+  membrane = new Poti(6, 5, 7, A1, false);
+  volume = new Poti(9, 8, 10, A2, true);
 
   pinMode(ledA, OUTPUT);
   digitalWrite(ledA, HIGH);
@@ -156,16 +146,21 @@ void setup() {
   digitalWrite(ledC, HIGH);
   pinMode(buttonLED, OUTPUT);
   digitalWrite(buttonLED, HIGH);
-  pinMode(button, INPUT);
+  pinMode(button, INPUT_PULLUP);
 
-  //begin SLIPSerial just like Serial
-  SLIPSerial.begin(57600);   // set this as high as you can reliably run on your platform
+  // initialize serial:
+  Serial.begin(baud);
+
+  // reserve 200 bytes for the inputString:
+  inputString.reserve(200);
+
 
   status = idle;
 }
 
 void loop() {
-  //buttonPressed = digitalRead(button);
+
+  buttonPressed = digitalRead(button);
 
   if (digitalRead(button)) buttonPressed = true;
 
@@ -182,9 +177,12 @@ void loop() {
   // read the state of the pushbutton value:
   if (digitalRead(button)) buttonPressed = true;
 
-
   //also needs to listen for incoming bundles!
-  listenForIncomingBundles();
+  //listenForIncomingBundles();
+  listenForIncomingBundlesViaSerial();
+
+  // read the state of the pushbutton value:
+  if (digitalRead(button)) buttonPressed = true;
 
   digitalWrite(buttonLED, on);
   if (!on) {
@@ -207,83 +205,82 @@ void update_() {
   buttonPressed_ = buttonPressed;
 }
 
-void listenForIncomingBundles() {
-  OSCBundle bundleIN;
-  int size;
+void sendValuesViaSerial() {
+  Serial.print(status);
+  Serial.print(",");
+  Serial.print(synced);
+  Serial.print(",");
+  Serial.print(changed);
+  Serial.print(",");
+  Serial.print(on);
+  Serial.print(",");
+  Serial.print(inputState);
+  Serial.print(",");
+  Serial.print(input->potiVal);
+  Serial.print(",");
+  Serial.print(membrane->potiVal);
+  Serial.print(",");
+  Serial.println(volume->potiVal);
+}
+
+
+/*
+  SerialEvent occurs whenever a new data comes in the hardware serial RX. This
+  routine is run between each time loop() runs, so using delay inside loop can
+  delay response. Multiple bytes of data may be available.
+*/
+void serialEvent() {
+  // read the state of the pushbutton value:
   if (digitalRead(button)) buttonPressed = true;
 
-  while (!SLIPSerial.endofPacket()) {
-    communicationStarted = false;
-    if (digitalRead(button)) buttonPressed = true;
-    if ( (size = SLIPSerial.available()) > 0)
-    {
-      if (digitalRead(button)) buttonPressed = true;
-      while (size--) {
-        bundleIN.fill(SLIPSerial.read());
-        // read the state of the pushbutton value:
-        if (digitalRead(button)) buttonPressed = true;
-      }
-    }
-  }
-  if (digitalRead(button)) buttonPressed = true;
 
-
-  if (!bundleIN.hasError()) {
-    bundleIN.dispatch("/on", _getOn);
-    if (digitalRead(button)) buttonPressed = true;
-
-    bundleIN.dispatch("/inputState", _getInputState);
-    if (digitalRead(button)) buttonPressed = true;
-
-    bundleIN.dispatch("/membrane", _getMembrane);
-    if (digitalRead(button)) buttonPressed = true;
-
-    bundleIN.dispatch("/volume", _getVolume);
+  while (Serial.available()) {
     // read the state of the pushbutton value:
     if (digitalRead(button)) buttonPressed = true;
 
-    if (buttonPressed && !(digitalRead(button))) {
-      on = !on;
+    // get the new byte:
+    char inChar = (char)Serial.read();
+    // add it to the inputString:
+    inputString += inChar;
+    // if the incoming character is a newline, set a flag so the main loop can
+    // do something about it:
+    if (inChar == '\n') {
+      stringComplete = true;
     }
-    buttonPressed = digitalRead(button);
+    // read the state of the pushbutton value:
+    if (digitalRead(button)) buttonPressed = true;
+  }
+}
 
+void listenForIncomingBundlesViaSerial() {
+  // read the state of the pushbutton value:
+    if (digitalRead(button)) buttonPressed = true;
+    
+  if (stringComplete) {
+    //on,inputState,membrane,volume
+    _on = Serial.parseInt();
+    _inputState = Serial.parseInt();
+    _membrane = Serial.parseInt();
+    _volume = Serial.parseInt();
+
+    // clear the string:
+    inputString = "";
+    stringComplete = false;
     compare();
-    sendOSCBundle();
+    sendValuesViaSerial();
     communicationStarted = true;
-  } else {
-    communicationStarted = false;
+
+    // read the state of the pushbutton value:
+    if (digitalRead(button)) buttonPressed = true;
   }
+
 }
 
-void _getOn(OSCMessage & msg) {
-  if (msg.isInt(0))
-  {
-    _on = msg.getInt(0);
-  }
-}
-
-void _getInputState(OSCMessage & msg) {
-  if (msg.isInt(0))
-  {
-    _inputState = inputType(msg.getInt(0));
-  }
-}
-
-void _getMembrane(OSCMessage & msg) {
-  if (msg.isInt(0))
-  {
-    _membrane = msg.getInt(0);
-  }
-}
-
-void _getVolume(OSCMessage & msg) {
-  if (msg.isInt(0))
-  {
-    _volume = msg.getInt(0);
-  }
-}
 
 void compare() {
+
+  // read the state of the pushbutton value:
+    if (digitalRead(button)) buttonPressed = true;
 
 
   //check if local values are synced to global values
@@ -378,6 +375,8 @@ void adaptWrite() {
 
 void updateInputState() {
 
+// read the state of the pushbutton value:
+    if (digitalRead(button)) buttonPressed = true;
 
   //1024-300  300-40  40-0
   if (input->potiVal >= 300 && on) {
@@ -399,25 +398,4 @@ void updateInputState() {
       inputState = line;
     }
   }
-}
-
-
-void sendOSCBundle() {
-  //declare the bundle
-  OSCBundle bndl;
-  //BOSCBundle's add' returns the OSCMessage so the message's 'add' can be composed together
-  bndl.add("/status").add((int32_t)status);
-  bndl.add("/on").add((int32_t)on);
-  bndl.add("/inputState").add((int32_t)inputState);
-  bndl.add("/input").add((int32_t)input->potiVal);
-  bndl.add("/membrane").add((int32_t)membrane->potiVal);
-  bndl.add("/volume").add((int32_t)volume->potiVal);
-  bndl.add("/synced").add((int32_t)synced);
-  bndl.add("/changed").add((int32_t)changed);
-
-  SLIPSerial.beginPacket();
-  bndl.send(SLIPSerial); // send the bytes to the SLIP stream
-  SLIPSerial.endPacket(); // mark the end of the OSC Packet
-  bndl.empty(); // empty the bundle to free room for a new one
-  delay(30);
 }
